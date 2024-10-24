@@ -1,14 +1,9 @@
 *.txt
 *.json
-batch*
-liquidity-*.py
-query-*.py
-
-misc.ipynb
 
 tabletex
 liquidity
-essence-bent
+essence*/*
 dynamics
 .vscode*
 **__pycache__**
