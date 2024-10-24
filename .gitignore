@@ -1,0 +1,14 @@
+*.txt
+*.json
+batch*
+liquidity-*.py
+query-*.py
+
+misc.ipynb
+
+tabletex
+liquidity
+essence-bent
+dynamics
+.vscode*
+**__pycache__**
