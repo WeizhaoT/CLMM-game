@@ -145,7 +145,7 @@ Given game parameters, compute the game actions of each LP at each day.
 #### Usage
 
 ```
-python3 nash.py -p <pool_id> [-g <gamma>] [-n <max_num_players>] [-r <keyword>] []
+python3 nash.py -p <pool_id> [-g <gamma>] [-n <max_num_players>] [--inert-expansion <E>] [-r <keyword>] [--skip-gt] [--notify]
 ```
 - `-p <pool_id>`: (**Mandatory**) ID of liquidity pool; found in [`pairs.csv`](pairs.csv). 
 - `-g <gamma>`: $\gamma$ (step size, alternatively $\eta$) of the [relaxation algorithm](https://www.youtube.com/watch?v=BqHbsdTD5w8) for solving Nash equilibrium in concave games. Default is 0.1. If you observe that the V value staying unconverged, retry a lower value of $\gamma$.
@@ -176,14 +176,14 @@ For each date under format `YY-MM-DD`, `game/<pool_id>/nash-<date>.json` stores 
 1. In addition to the daily game, we construct two empirical games to simulate the actions of LPs:
    - **Responsive Game**: constructed by *accurate* game parameters from *previous day* 
    - **Inert Game**: constructed by *inaccurate* game parameters from *past week*
-   > [!TIP]
-   > Realism v.s. impressionism
+> [!TIP]
+> Realism v.s. impressionism
 2. Currently, we calculate the following actions:
    - Ground Truth (GT): actions parsed from data
    - Nash Equilibrium (NE): actions at equilibrium of the game; computed by the relaxation algorithm
    - Best Response (BR): actions that maximize the utility of each player, assuming other players are sticking to GT
-   > [!TIP]
-   > See [material](https://s3.wp.wsu.edu/uploads/sites/1790/2017/11/nash-equilibrium.pdf) for game theoretic concepts. 
+> [!TIP]
+> See [material](https://s3.wp.wsu.edu/uploads/sites/1790/2017/11/nash-equilibrium.pdf) for game theoretic concepts. 
    - Yesterday's Actions (YDay): Simply repeating yesterday's actions
    - Nash Equilibrium in Responsive Game (R_NE): actions at Nash equilibrium of the responsive game
    - Best Response in Responsive Game (R_BR): best response actions of the responsive game
@@ -196,3 +196,60 @@ For each date under format `YY-MM-DD`, `game/<pool_id>/nash-<date>.json` stores 
    - (GT) `fee` and `cost`: Fee income and impermanent loss of the LP in the game, breaking down utility
    - (GT) `fee_data` and `cost_data`: Fee income and impermanent loss of the LP parsed from the raw data; generally equal to `fee` and `cost`
    - (NE/R_NE/I_NE) `ne_util`: Utility of LP with Nash Equilibrium action, assuming other players also use NE
+  
+# 4. Game Action Analysis
+
+#### Main Purpose
+Extract main information from the game actions and their metrics as 1-D arrays, and export them into pickle files for future visualization.
+
+#### Usage
+```
+python3 analyze.py -p <pool_id> --keyword <keyword> [-m <max_plotted_players>] [--notify]
+```
+
+- `-p <pool_id>`: (**Mandatory**) ID of liquidity pool; found in [`pairs.csv`](pairs.csv).
+- `--keyword <keyword>`: (**Mandatory**) Keyword of action computation. Data will be read from `game/<pool_id>-<keyword>`.
+- `-m <max_plotted_players>`: Maximum number of players to be plotted. If not specified, no daily plot is generated. Does not affect the pickled results. 
+- `--notify`: Enable sound notification (must have [SoX](https://arielvb.readthedocs.io/en/latest/docs/commandline/sox.html)) after the analysis is done.
+
+#### Output
+Pickled file `essence-<keyword>/<pool_id>.pkl`. See class `Essence` [nash_parser.py](nash_parser.py) for the relevant contents.
+
+
+#### Notes
+Some overall plots are generated under `game/<pool_id>-<keyword>`, but they can be ignored.
+
+# 5. Tabular Summary and Visualization
+
+#### Main Purpose
+Generate a LaTeX tabular summary and visualization of the game actions and their metrics. 
+
+#### Usage
+Walk through the sections in `essence.ipynb`. 
+
+#### Output
+- LaTeX tabular summary: `tabletex/table.tex`.
+- LaTeX visualization: `essence-<keyword>/*.jpg`.
+
+# Appendix. Tuning Inert Expansion Parameter
+
+#### Purpose
+Preview the utility and GT overlap for different inert expansion parameters `E` when constructing the inert game. 
+
+#### Usage
+```
+python3 inert_test.py -p <pool_id> [-s <skip_prob>] -u <U[0], U[1], ...> -l <L[0], L[1],...> [-a]
+```
+
+- `-p <pool_id>`: (**Mandatory**) ID of liquidity pool; found in [`pairs.csv`](pairs.csv).
+- `-s <skip_prob>`: Probability of skipping calculation for each day. Default is 0.
+- `-u <U[0], U[1],...>`: (**Mandatory**) A list of upper expansion factors. For each item $E_\text{U}$ in list `U`, we calculate the utility and GT overlap for the inert game with upper expansion $E_\text{U}$. By default, lower expansion equals $E_\text{U}$. 
+- `-l <L[0], L[1],...>`: NOT IMPLEMENTED. NO EFFECT BY SETTING THIS. 
+
+#### Output
+- Pickled data: `inert_test_result/I_BR-<pool_id>.pkl`. 
+- json preview: `inert_test_result/I_BR-<pool_id>.json` (only includes means of utility and GT overlap for each inert expansion parameter).
+
+# Ending Remarks
+
+Please check our [paper](TODO) for more details.
