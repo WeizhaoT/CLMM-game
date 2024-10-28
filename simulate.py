@@ -12,11 +12,24 @@ import warnings
 from collections import defaultdict, deque
 from tqdm import tqdm
 from library import LXC, ensure_path, sing, search_dir, DateIter, Pool, convert_price, plot_dynamics, check_int
-
-MAX_ERROR = 1e-3
+from typing import Tuple
 
 
 def get_token_info(pid):
+    """
+    Retrieves token information for a given pool ID.
+
+    Args:
+        pid (int): The pool ID for which to retrieve token information.
+
+    Returns:
+    dict: A dictionary containing the following token information:
+        - 'T0': Symbol of token0.
+        - 'T1': Symbol of token1.
+        - 'D0': Decimals of token0.
+        - 'D1': Decimals of token1.
+        - 'fee': Fee associated with the pool, expressed as a fraction.
+    """
     df = pd.read_csv('pairs.csv', index_col='pair_id')
     row = df.loc[pid]
     return {
@@ -29,6 +42,18 @@ def get_token_info(pid):
 
 
 def get_token_id(row, liq: pd.DataFrame, pos: pd.DataFrame):
+    """
+    Identifies the token IDs associated with a given transaction row.
+
+    Args:
+        row (pd.Series): A row from a DataFrame containing transaction details, including 'transaction_hash', 'event', 
+                        'tickLower', 'tickUpper', and 'liquidity'.
+        liq (pd.DataFrame): A DataFrame containing liquidity information, indexed by 'transaction_hash'.
+        pos (pd.DataFrame): A DataFrame containing position information, indexed by 'token_id'.
+
+    Returns:
+        list: A list of token IDs that match the transaction details. Returns [-1] if no matching tokens are found.
+    """
     try:
         entries = liq.loc[[row['transaction_hash']]]
     except KeyError:
@@ -52,6 +77,19 @@ def get_token_id(row, liq: pd.DataFrame, pos: pd.DataFrame):
 
 
 def handle_liq_change(row, df_liq, df_pos, memory):
+    """
+    Handles changes in liquidity for a given transaction row.
+
+    Args:
+        row (pd.Series): A row from a DataFrame containing transaction details, including 'transaction_hash', 'event', 
+                        'tickLower', 'tickUpper', and 'liquidity'.
+        df_liq (pd.DataFrame): A DataFrame containing liquidity information, indexed by 'transaction_hash'.
+        df_pos (pd.DataFrame): A DataFrame containing position information, indexed by 'token_id'.
+        memory (set): A set used to track processed transactions to avoid duplicate processing.
+
+    Returns:
+        tuple: A tuple (dx, dy) representing the change in token amounts due to the liquidity change.
+    """
     tl, tu, liq = int(row['tickLower']), int(row['tickUpper']), int(row['liquidity'])
     if liq == 0:
         return 0, 0
@@ -73,7 +111,20 @@ def handle_liq_change(row, df_liq, df_pos, memory):
     return dx, dy
 
 
-def load(path, pid):
+def load(path: str, pid: int):
+    """
+    Loads and processes data related to positions, liquidity, and events for a given pool ID.
+
+    Args:
+        path (str): The directory path where the data files are located.
+        pid (int): The pool ID used to identify the specific data files to load.
+
+    Returns:
+        tuple: A tuple containing three pandas DataFrames:
+            - df_ttl: DataFrame containing event data, indexed by 'index'.
+            - df_pos: DataFrame containing position data, indexed by 'token_id'.
+            - df_liq: DataFrame containing liquidity data, indexed by 'transaction_hash'.
+    """
     timer_start = time.time()
     print(LXC.yellow_lt(f'Loading position  (1/3)... \r'), end='', flush=True)
     df_pos = pd.read_csv(f'{path}/{pid}-Positions.csv', index_col='token_id',
@@ -97,7 +148,20 @@ def load(path, pid):
     return df_ttl, df_pos, df_liq
 
 
-def player_pos_delta(df_liq: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp):
+def player_pos_delta(df_liq: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp) -> Tuple[dict, dict]:
+    """
+    Calculates the changes in player positions over a specified time range.
+
+    Args:
+        df_liq (pd.DataFrame): A DataFrame containing liquidity information, indexed by 'block_timestamp'.
+        start (pd.Timestamp): The start timestamp for the range of interest.
+        end (pd.Timestamp): The end timestamp for the range of interest.
+
+    Returns:
+        Tuple[dict, dict]: A tuple containing two token_id -> liquidity dictionaries:
+            - The first dictionary updates the set of player LPs during this period (from player set of last period).
+            - The second dictionary updates the positions by the end of this period (from end of last period).
+    """
     df_liq = df_liq.set_index('block_timestamp').truncate(before=start+pd.Timedelta(milliseconds=1), after=end)
 
     initial, delta_updates, ending_updates, zeros = {}, {}, {}, set()
@@ -142,14 +206,13 @@ if __name__ == '__main__':
     parser.add_argument('-p', '--pool', type=int, required=True, help='Pool number')
     parser.add_argument('-r', type=str, help='Restore from checkpoint')
     parser.add_argument('-i', '--image', action='store_true', help='Generate periodic summary plots')
-    parser.add_argument('-c', '--collect-fee', action='store_true', help='Enable fee calculation')
-    parser.add_argument('--notify', action='store_true')
+    parser.add_argument('--disable-fee', action='store_true', help='Disable fee calculation')
+    parser.add_argument('--notify', action='store_true', help='Notify completion with sound')
     args = parser.parse_args()
     PID = args.pool
 
     def in_date_range(date: pd.Timestamp):
         return date > pd.Timestamp('2023-12-30 23:59:59')
-        # return date > pd.Timestamp('2024-05-08 23:59:59')
 
     process = psutil.Process()
     proc_pool = mp.Pool(mp.cpu_count() - 2)
@@ -189,7 +252,6 @@ if __name__ == '__main__':
     errors = {}
 
     bar = tqdm(total=len(F_TTL) - 1, initial=mem_idx, position=0)
-    # barp = tqdm(total=0, initial=0, position=1)
 
     while time_iter.ddl() < F_TTL.iloc[mem_idx+1]['timestamp']:
         time_iter.proceed()
@@ -225,7 +287,7 @@ if __name__ == '__main__':
 
                     dx, dy = pool.swap(convert_price(int(row['sqrtPriceX96'])),
                                        row['token0_price_usd'], row['token1_price_usd'],
-                                       compute_fee=args.collect_fee and flag_in_range, timestamp=ts)
+                                       compute_fee=(not args.disable_fee) and flag_in_range, timestamp=ts)
                     swap_idx.append(i)
             except:
                 bar.close()
@@ -322,4 +384,4 @@ if __name__ == '__main__':
     print(LXC.green_lt(f'Complete!'))
 
     if args.notify:
-        sing(['E4', 'E4', 'E4', 'C5', 'D5', 'B5', 'C5', 'G4'], extend=2)
+        sing([['C4', 'D4#', 'F4#', 'A5']])

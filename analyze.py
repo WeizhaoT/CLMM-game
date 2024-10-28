@@ -13,7 +13,7 @@ from typing import List
 from sortedcontainers import SortedDict
 
 from library import LXC, ensure_path, sing, report_single_LP, plot_whale_shrimp, plot_ecdf, linestyle_cycle, \
-    marker_cycle, LPInfo, Loader, Streak, Stats, Essence, clear_excluded, LiqConverter
+    marker_cycle, LPInfo, Loader, Streak, Essence, clear_excluded, LiqConverter
 
 matplotlib.use('Agg')
 
@@ -56,7 +56,6 @@ if __name__ == '__main__':
     PID = args.p
     ESS = Essence()
     STREAK = Streak()
-    STATS = Stats()
 
     datadir = f'dynamics/{PID}-archive'
     gamedir = f'game/{PID}-{args.keyword}'

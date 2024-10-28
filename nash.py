@@ -10,13 +10,13 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-p', type=int, required=True, help="pool ID")
     parser.add_argument('-g', '--gamma', type=float, default=1e-1, help="gamma in relaxation method of NE solving")
-    parser.add_argument('--raw', action='store_true', help="use raw USD price instead of bent USD price")
-    parser.add_argument('--inert-expansion', type=float, default=None, help="inert game expansion factor E")
-    parser.add_argument('--notify', action='store_true', help="notify by sound")
-    parser.add_argument('--skip-gt', action='store_true', help="skip reloading ground truth")
-
     parser.add_argument('-n', type=int, default=30, help="max number of players; do not set if reloading")
+    parser.add_argument('--inert-expansion', type=float, default=None, help="inert game expansion factor E")
+    parser.add_argument('--raw', action='store_true', help="use raw USD price instead of bent USD price")
+
     parser.add_argument('-r', '--reload', type=str, default=None, help="reload previous results")
+    parser.add_argument('--skip-gt', action='store_true', help="skip reloading ground truth")
+    parser.add_argument('--notify', action='store_true', help="notify by sound")
 
     args = parser.parse_args()
 

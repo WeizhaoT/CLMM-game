@@ -11,10 +11,11 @@ from library import ensure_path, sing, Intelligence
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-p', type=int, required=True)
-    parser.add_argument('-s', '--skip-prob', type=float, default=0)
-    parser.add_argument('-u', type=float, nargs='+', required=True)
-    parser.add_argument('-l', type=float, nargs='+', required=False)
+    parser.add_argument('-p', type=int, required=True, help='Pool ID')
+    parser.add_argument('-s', '--skip-prob', type=float, default=0, help='Probability to skip a date; between 0 and 1')
+    parser.add_argument('-u', type=float, nargs='+', required=True, help='Expansion factor of upper price bound')
+    parser.add_argument('-l', type=float, nargs='+', required=False, help='Expansion factor of lower price bound. '
+                        'NOT IMPLEMENTED YET')
     parser.add_argument('-a', action='store_true')
     args = parser.parse_args()
 
@@ -76,8 +77,8 @@ if __name__ == '__main__':
 
     bar_hi.close()
 
-    ensure_path('essence', empty=False)
-    jsonpath, filepath = f'essence/I_BR-{PID}.json', f'essence/I_BR-{PID}.pkl'
+    ensure_path('inert_test_result', empty=False)
+    jsonpath, filepath = f'inert_test_result/I_BR-{PID}.json', f'inert_test_result/I_BR-{PID}.pkl'
     if args.a and os.path.exists(filepath):
         with open(filepath, 'rb') as f:
             obj = pickle.load(f)
