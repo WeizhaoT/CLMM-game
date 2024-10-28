@@ -21,15 +21,15 @@ def centered_subplots(nplots: int, ncols: int, width: float, height: float, dpi=
     """
     Create a figure with a specified number of subplots arranged in a grid, centered within the figure.
 
-    Parameters:
-    nplots (int): The total number of subplots to create.
-    ncols (int): The number of columns in the subplot grid.
-    width (float): The width of each subplot in inches.
-    height (float): The height of each subplot in inches.
-    dpi (int, optional): The resolution of the figure in dots per inch. Default is 300.
+    Args:
+        nplots (int): The total number of subplots to create.
+        ncols (int): The number of columns in the subplot grid.
+        width (float): The width of each subplot in inches.
+        height (float): The height of each subplot in inches.
+        dpi (int, optional): The resolution of the figure in dots per inch. Default is 300.
 
     Returns:
-    List[plt.Axes]: A list of matplotlib Axes objects for the created subplots.
+        List[plt.Axes]: A list of matplotlib Axes objects for the created subplots.
     """
     nrows = (nplots - 1) // ncols + 1
     fig = plt.figure(figsize=(width*ncols, height*nrows), dpi=dpi)
@@ -46,23 +46,22 @@ def centered_subplots(nplots: int, ncols: int, width: float, height: float, dpi=
     return fig, axs
 
 
-def centered_subplots(nplots: int, ncols: int, width: float, height: float, dpi=300) -> List[plt.Axes]:
-    nrows = (nplots - 1) // ncols + 1
-    fig = plt.figure(figsize=(width*ncols, height*nrows), dpi=dpi)
-    grid = GridSpec(ncols=2*ncols, nrows=nrows, figure=fig)
-    d = nrows * ncols - nplots
-
-    axs = []
-    for i in range(nplots):
-        r, c = divmod(i, ncols)
-        if r == nrows-1 and d > 0:
-            axs.append(fig.add_subplot(grid[r, d+c*2:d+c*2+2]))
-        else:
-            axs.append(fig.add_subplot(grid[r, c*2:c*2+2]))
-    return fig, axs
-
-
 def plot_ecdf(arr, ax: plt.Axes, start: float = None, end: float = None, percentage: bool = False, stats: bool = True, **plot_kwargs):
+    """
+    Plot the Empirical Cumulative Distribution Function (ECDF) of an array on a given matplotlib Axes.
+
+    Args:
+        arr (array-like): The data array for which the ECDF is to be plotted.
+        ax (plt.Axes): The matplotlib Axes object where the ECDF will be plotted.
+        start (float, optional): The starting value for the x-axis. Defaults to the first element of the sorted array.
+        end (float, optional): The ending value for the x-axis. Defaults to the last element of the sorted array.
+        percentage (bool, optional): If True, format the x-axis as percentages. Defaults to False.
+        stats (bool, optional): If True, include mean and median statistics in the plot label. Defaults to True.
+        **plot_kwargs: Additional keyword arguments to pass to the plot function.
+
+    Returns:
+        list: A list of Line2D objects representing the plotted data.
+    """
     x, counts = np.unique(arr, return_counts=True)
     cusum = np.cumsum(counts)
     x = [x[0] if start is None else start] + list(x) + [x[-1] if end is None else end]
@@ -80,21 +79,7 @@ def plot_ecdf(arr, ax: plt.Axes, start: float = None, end: float = None, percent
     return ax.plot(x, y, drawstyle='steps-post', label=label, **plot_kwargs)
 
 
-def plot_epdf(arr, ax: plt.Axes, start: float = None, end: float = None, percentage: bool = False, stats: bool = True, **plot_kwargs):
-    x, counts = np.unique(arr, return_counts=True)
-    x = [x[0] if start is None else start] + list(x) + [x[-1] if end is None else end]
-    y = [0.] + list(counts / sum(counts)) + [0]
-
-    if percentage:
-        avg_str, med_str = f'{np.mean(arr) * 100:.1f} %', f'{np.median(arr) * 100:.1f} %'
-        ax.xaxis.set_major_formatter(matplotlib.ticker.PercentFormatter(xmax=1.))
-    else:
-        avg_str = np.format_float_scientific(np.mean(arr), precision=1, exp_digits=1)
-        med_str = np.format_float_scientific(np.median(arr), precision=1, exp_digits=1)
-    label = plot_kwargs.pop('label') if 'label' in plot_kwargs else ''
-    if stats:
-        label += f'  Mean {avg_str} | Med {med_str}'
-    return ax.plot(x, y, drawstyle='steps-post', label=label, **plot_kwargs)
+# All following functions are used for various plots in plot_dynamics function, which is not very important
 
 
 def scatter_with_linreg(x, y, ax, xlabel, ylabel):
@@ -129,12 +114,12 @@ def hist_liquidtiy(ax: plt.Axes, deltas, players=Bars(), removed=[], left=None, 
         all_deltas = deltas + [(r[0], r[2], -1) for r in removed] + [(r[1], -r[2], -1) for r in removed]
         removed: Bars = Bars.from_delta(all_deltas, sort=True)
         removed.apply_numpy(tick_map=tick_map, value_map=value_map)
-        removed.bar(ax, color='y', edgecolor='k', label='Removed')
+        removed.barplot(ax, color='y', edgecolor='k', label='Removed')
         ymax = min(max(total) * 2, max(removed) * 1.1)
 
-    total.bar(ax, color='b', edgecolor='k', label='Total')
+    total.barplot(ax, color='b', edgecolor='k', label='Total')
     if not players.empty():
-        players.bar(ax, color='r', edgecolor='k', label='Players')
+        players.barplot(ax, color='r', edgecolor='k', label='Players')
 
     ax.set_ylim(0, ymax)
     ax.xaxis.set_major_formatter(ScalarFormatter())
@@ -182,8 +167,8 @@ def hist_fee(ax: plt.Axes, player: Bars, total: Bars, mult=1):
     player.apply(tick_map=power_price)
     total.apply(tick_map=power_price)
 
-    total.bar(ax, color='blue', edgecolor='black', label='Total')
-    player.bar(ax, color='red', edgecolor='black', label='Players')
+    total.barplot(ax, color='blue', edgecolor='black', label='Total')
+    player.barplot(ax, color='red', edgecolor='black', label='Players')
 
     left, right = total.margins()
     ax.set_xlim(left / 1.2, right * 1.2)
@@ -293,12 +278,6 @@ def scatter_fund_utility(ax: plt.Axes, df):
     ax.grid(True)
 
 
-def plot_bars(ax: plt.Axes, bars: Bars, label: str = None):
-    T = np.array(bars.T)
-    kwargs = {"ec": "k", "alpha": .3} | ({"hatch": "/", "color": "w"} if "GT" in str(label) else {})
-    ax.bar(T[:-1], bars.V, width=T[1:]-T[:-1], align='edge', label=label, **kwargs)
-
-
 def report_single_LP(data: LPInfo, lpid, axs: List[plt.Axes]):
     actions: Dict[str, Bars] = {key: data.action_in_liq(key) for key in data}
 
@@ -306,18 +285,20 @@ def report_single_LP(data: LPInfo, lpid, axs: List[plt.Axes]):
     ax.set_title(f'LP {lpid+1}: Action from Present')
     for key in ["GT", "NE", "BR"]:
         if key in actions:
-            plot_bars(ax, actions[key], label=f'{key} ${num_alias(int(data.utility(key)))}')
+            gt_kwargs = {"hatch": "/", "color": "w"} if key == "GT" else {}
+            actions[key].barplot(ax, ec="k", alpha=.3, label=f'{key} ${num_alias(int(data.utility(key)))}', **gt_kwargs)
 
     ax = axs[1]
     ax.set_title(f'LP {lpid+1}: Action from Past')
     keys_r = [key for key in ["R_NE", "R_BR"] if key in actions]
     keys_i = [key for key in ["I_NE", "I_BR"] if key in actions]
-    for key in keys_r:
-        plot_bars(ax, actions[key], label=f'{key} ${num_alias(int(data.utility(key)))}')
+    for key in keys_r + keys_i:
+        actions[key].barplot(ax, ec="k", alpha=.3, label=f'{key} ${num_alias(int(data.utility(key)))}')
     for key in keys_i:
-        plot_bars(ax, actions[key], label=f'{key} ${num_alias(int(data.utility(key)))}')
+        actions[key].barplot(ax, ec="k", alpha=.3, label=f'{key} ${num_alias(int(data.utility(key)))}')
     if keys_i or keys_r:
-        plot_bars(ax, actions["GT"], label=f'GT ${num_alias(int(data.utility("GT")))}')
+        actions["GT"].barplot(ax, ec="k", alpha=.3, hatch='/', color='w',
+                              label=f'{key} ${num_alias(int(data.utility(key)))}')
 
     ax = axs[2]
     ax.set_title(f'LP {lpid+1}: Budget ${num_alias(data.budget)} / BR ${num_alias(data.utility("BR"))}')

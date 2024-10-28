@@ -35,6 +35,18 @@ def num_alias(n: int) -> str:
 
 
 def frexp(number):
+    """
+    Decompose a number into its mantissa and exponent.
+
+    This function takes a number and decomposes it into a normalized fraction (mantissa)
+    and an exponent, such that the number is represented as mantissa * (10 ** exponent).
+
+    Args:
+        number: The number to be decomposed. Can be an integer or a float.
+
+    Returns:
+        Tuple[Decimal, int]: A tuple containing the mantissa as a Decimal and the exponent as an integer.
+    """
     (_, digits, exponent) = Decimal(number).as_tuple()
     return Decimal(number).scaleb(-(len(digits) + exponent - 1)).normalize(), len(digits) + exponent - 1
 

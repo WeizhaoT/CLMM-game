@@ -19,35 +19,38 @@ matplotlib.use('Agg')
 
 def convert_price(sqrtPX96, digit=0):
     """
-    Converts a square root price to a regular price with the specified number of decimal places.
+    Converts an integer square root price to a regular price with the specified number of decimal places.
 
-    Parameters:
-    sqrtPX96 (int, float): The square root of the price, where P is the actual price.
-    digit (int, optional): The number of decimal places in the resulting price. Default is 0.
+    Args:
+        sqrtPX96 (int, str): The square root of the price, where P is the actual price.
+        digit (int, optional): The number of decimal places in the resulting price. Default is 0.
 
     Returns:
-    float: The converted price with the specified number of decimal places.
+        float: The converted price with the specified number of decimal places.
     """
     return ((int(sqrtPX96) / 2.0**96) ** 2) * (10 ** digit)
 
 
-def tokens_from_liquidity(liq: float, price: float, ltick: int, utick: int, FX: float = 1., FY: float = 1.):
+def tokens_from_liquidity(liq: float, price: float, ltick: int, utick: int, FX: float = 1., FY: float = 1.) -> Tuple[float, float]:
     """
-    Calculate the amount of Token 0 and Token 1 that corresponds to a given liquidity in a given price range.
+    Calculate the amount of tokens derived from a given liquidity within a specified price range.
 
-    Parameters:
-    liq (float): The liquidity amount.
-    price (float): The current price of Token 0 in terms of Token 1.
-    ltick (int): The lower tick of the price range.
-    utick (int): The upper tick of the price range.
-    FX (float, optional): Offset the amount by the number of decimals of Token 0. Default is 1.
-    FY (float, optional): Offset the amount by the number of decimals of Token 1. Default is 1.
+    This function computes the amounts of two types of tokens that can be obtained from a specified
+    liquidity, given a current price and a range defined by lower and upper ticks. The function
+    also allows for optional scaling factors for each token type.
+
+    Args:
+        liq (float): The amount of liquidity available.
+        price (float): The current price at which the liquidity is evaluated.
+        ltick (int): The lower tick boundary of the price range.
+        utick (int): The upper tick boundary of the price range.
+        FX (float, optional): A scaling factor for the first token type. Defaults to 1.
+        FY (float, optional): A scaling factor for the second token type. Defaults to 1.
 
     Returns:
-    tuple: A tuple containing the amount of Token 0 and Token 1, respectively.
-
-    The function calculates the amount of Token 0 and Token 1 that corresponds to a given liquidity in a given price range.
-    It takes into account the exchange rates from Token 0 and Token 1 to USD.
+        Tuple[float,float]: A tuple containing the amounts of the two token types derived from the liquidity.
+        The first element is the amount of the first token type, and the second element is the amount of the
+        second token type, both adjusted by their respective scaling factors.
     """
     lprice, uprice = t2p(ltick, utick)
     mprice = max(lprice, min(uprice, price))
@@ -55,6 +58,8 @@ def tokens_from_liquidity(liq: float, price: float, ltick: int, utick: int, FX: 
 
 
 class Fee2D:
+    """ Fee of a price range storing both X and Y tokens. """
+
     def __init__(self, x: int = 0, y: int = 0) -> None:
         self.x, self.y = x, y
 
@@ -67,20 +72,24 @@ class Fee2D:
         else:
             return Fee2D(self.x + fee, self.y) if token_type_eq_0 else Fee2D(self.x, self.y + fee)
 
-    def zero(self) -> bool:
+    def eq_zero(self) -> bool:
         return self.x == 0 and self.y == 0
 
-    def split(self, *ticks: int):
+    def split(self, *ticks: int) -> List[Fee2D]:
         """
-        Splits the current Fee2D object into multiple Fee2D objects based on the provided tick boundaries.
+        Splits the current Fee2D object into multiple Fee2D objects based on the provided tick intervals.
 
-        Parameters:
-        *ticks (int): A variable number of tick boundaries that define the intervals for splitting.
-                    There must be at least two tick values, and they must be in strictly increasing order.
+        This function divides the current fee amounts (x and y) into smaller portions according to the
+        specified tick intervals. It ensures that the tick intervals are strictly increasing and calculates
+        the proportional fee amounts for each interval.
+
+        Args:
+            *ticks (int): A variable number of integer tick values defining the intervals. 
+                          There must be at least two tick values, and they must be in strictly increasing order.
 
         Returns:
-        List[Fee2D]: A list of Fee2D objects, each representing the portion of the original Fee2D
-                    object within the corresponding interval defined by the tick boundaries.
+            List[Fee2D]: A list of Fee2D objects, each representing the portion of the original fee amounts
+                        corresponding to a specific tick interval.
         """
         assert len(ticks) >= 2
         for i in range(len(ticks) - 1):
@@ -95,7 +104,19 @@ class Fee2D:
 
 
 class Histogram2D:
+    """ Histogram of fees in both X and Y tokens """
+
     def __init__(self, ticks: List[int] = [], tokens: List[Fee2D] = []) -> None:
+        """
+        Initialize a Histogram2D object with specified ticks and token fees.
+
+        Args:
+            ticks (List[int], optional): A list of integer tick values defining the intervals for the histogram.
+                                         Defaults to an empty list.
+            tokens (List[Fee2D], optional): A list of Fee2D objects representing the fees associated with each
+                                            tick interval. The length of this list should be one less than the
+                                            length of the ticks list. Defaults to an empty list.
+        """
         self.dtype = Fee2D
         self.T = []
         self.tokens: Dict[int, Fee2D] = {}
@@ -109,9 +130,9 @@ class Histogram2D:
             s += self.tokens[t]
 
         tl, tr = 0, len(self.T) - 1
-        while tl < tr and self.tokens[self.T[tl+1]].zero():
+        while tl < tr and self.tokens[self.T[tl+1]].eq_zero():
             tl += 1
-        while tl < tr and self.tokens[self.T[tr]].zero():
+        while tl < tr and self.tokens[self.T[tr]].eq_zero():
             tr -= 1
 
         if tl == tr:
@@ -130,26 +151,13 @@ class Histogram2D:
     def __len__(self):
         return max(len(self.T) - 1, 0)
 
-    def empty(self):
-        return len(self.T) == 0
-
-    def a(self, i):
-        return self.T[i]
-
-    def b(self, i):
-        return self.T[i+1]
-
     def merge(self, fees: Bars, token_type_eq_0: bool):
         """
-        Merges the current histogram with another set of fees, updating the internal state.
+        Add another fees histogram to the current histogram.
 
-        Parameters:
-        fees (Bars): A Bars object representing the fees to be merged with the current histogram.
-        token_type_eq_0 (bool): A boolean indicating whether the token type is equal to 0. 
-                                If True, the x component of the Fee2D is updated; otherwise, the y component is updated.
-
-        Returns:
-        None: This function updates the internal state of the histogram and does not return a value.
+        Args:
+            fees (Bars): A Bars object representing the fees to be merged with the current histogram.
+            token_type_eq_0 (bool): A boolean indicating whether the token is X (true) or Y (false).
         """
         i = j = 0
         self.T, old_ticks = [], self.T
@@ -191,9 +199,6 @@ class Histogram2D:
                 fee_range = (fees.T[j-1], fees.T[j])
                 fee_pizza = Fee2D(x=fees[j-1]) if token_type_eq_0 else Fee2D(y=fees[j-1])
 
-    def to_list(self):
-        return list(self.tokens.items())
-
     def clear(self):
         self.tokens.clear()
         self.T.clear()
@@ -202,16 +207,15 @@ class Histogram2D:
         """
         Adjusts the current histogram to match the structure of another histogram.
 
-        This function modifies the current histogram's tokens to align with the intervals
-        defined by the provided histogram. It ensures that the tokens in the current histogram
-        are split or assigned based on the intervals and values in the provided histogram.
+        This function modifies the current histogram's tokens to align with the
+        provided histogram's tick intervals. It ensures that the tokens in the
+        current histogram are updated or split according to the intervals defined
+        in the provided histogram.
 
-        Parameters:
-        hist (Histogram2D): The histogram to align with. The current histogram will be adjusted
-                            to match the intervals and values of this histogram.
-
-        Returns:
-        None: This function updates the internal state of the current histogram and does not return a value.
+        Args:
+            hist (Histogram2D): The histogram whose structure is used to adjust the
+                                current histogram. The tokens in the current histogram
+                                are updated to match the tick intervals of this histogram.
         """
         i = j = 0
         while i < len(self.T) and j < len(hist.T):
@@ -240,14 +244,30 @@ class Histogram2D:
     def FeeY(self, mult=1.):
         return [self.tokens[t].y * mult for t in self.T[1:]]
 
-    def evaluate(self, price0, price1) -> Bars:
+    def evaluate(self, usd_x: float, usd_y: float) -> Bars:
+        """
+        Evaluate the total value of the histogram in USD terms.
+
+        This function calculates the total value of the histogram by converting
+        the token amounts into USD using the provided exchange rates for each token type.
+
+        Args:
+            usd_x (float): The USD exchange rate for the first token type (X).
+            usd_y (float): The USD exchange rate for the second token type (Y).
+
+        Returns:
+            Bars: A Bars object representing the total value of the histogram in USD
+                  across the defined tick intervals.
+        """
         if len(self.tokens) == 0:
             return Bars()
 
-        return Bars(self.T, [self.tokens[t].x*price0 + self.tokens[t].y*price1 for t in self.T[1:]])
+        return Bars(self.T, [self.tokens[t].x*usd_x + self.tokens[t].y*usd_y for t in self.T[1:]])
 
 
 class Position:
+    """ Liquidity position represented by NFT. """
+
     def __init__(self, token_id, owner, ltick, utick, liq, price, birth=None) -> None:
         self.id = token_id
         self.owner = owner
@@ -261,11 +281,31 @@ class Position:
     def clear_fee(self):
         self.fee0 = self.fee1 = self.marginal0 = self.marginal1 = 0
 
-    def amounts(self, price):
+    def amounts(self, price: float) -> Tuple[float, float]:
+        """
+        Calculate the amounts of tokens based on the current liquidity and price.
+
+        This function computes the amounts of two types of tokens that can be obtained
+        from the current liquidity position, given a specific price and the position's
+        tick range.
+
+        Args:
+            price (float): The current price at which the liquidity is evaluated.
+
+        Returns:
+            Tuple[float, float]: A tuple containing the amounts of the two token types
+            derived from the liquidity. The first element is the amount of the first
+            token type, and the second element is the amount of the second token type.
+        """
         return tokens_from_liquidity(self.liq, price, self.tl, self.tu)
 
 
 class LiqTable:
+    """ 
+    A table of NFT liquidity implemented by a matrix. 
+    Rows correspond to NFT positions, and columns correspond to price ranges.  
+    """
+
     def __init__(self):
         self.ticks: SortedList = SortedList()
         self.TAB = np.array([])
@@ -285,24 +325,28 @@ class LiqTable:
         return '\n'.join(rows) + '\n'
 
     def clear(self):
+        """ Resets the table to zero liquidity. """
         self.ticks.clear()
         self.TAB = np.array([])
         self.vacants.clear()
         self.rid_to_pid.clear()
         self.pid_to_rid.clear()
 
-    def update_liquidity(self, pid, tl, tu, L):
+    def update_liquidity(self, pid: int, tl: int, tu: int, L: float):
         """
-        Updates the liquidity for a given position identified by pid.
+        Update the liquidity for a given position within specified tick boundaries.
 
-        Parameters:
-        pid (int): The position identifier.
-        tl (int): The lower tick boundary for the liquidity range.
-        tu (int): The upper tick boundary for the liquidity range.
-        L (float): The amount of liquidity to be set. If L is zero, the position is removed.
+        This function adjusts the liquidity table to reflect the new liquidity amount
+        for a position identified by `pid`. If the liquidity `L` is zero, the position
+        is removed. Otherwise, the function updates or adds the liquidity amount
+        between the specified lower (`tl`) and upper (`tu`) tick boundaries.
 
-        Returns:
-        None: This function updates the internal state of the liquidity table and does not return a value.
+        Args:
+            pid (int): The position identifier for which the liquidity is being updated.
+            tl (int): The lower tick (int index, NOT price) of the price range.
+            tu (int): The upper tick (int index, NOT price) of the price range.
+            L (float): The amount of liquidity to be set for the specified range. If zero,
+                       the position is removed.
         """
         if L == 0:
             if pid in self.pid_to_rid:
@@ -328,14 +372,14 @@ class LiqTable:
         they are added, and the table is expanded accordingly. Optionally, a new row can be added
         to the table.
 
-        Parameters:
-        ticks (list): A list of tick values to align with the internal liquidity table.
-        add_row (bool): A boolean flag indicating whether to add a new row to the table. 
-                        Defaults to False.
+        Args:
+            ticks (list): A list of tick values to align with the internal liquidity table.
+            add_row (bool): A boolean flag indicating whether to add a new row to the table. 
+                            Defaults to False.
 
         Returns:
-        list: A list of indices corresponding to the positions of the specified ticks in the 
-              aligned liquidity table.
+            list: A list of indices corresponding to the positions of the specified ticks in the 
+                aligned liquidity table.
         """
         n, m = np.shape(self.TAB)
         idx = [self.ticks.bisect_left(t) for t in ticks]
@@ -392,16 +436,16 @@ class LiqTable:
         over a range of ticks. It returns a dictionary mapping position identifiers to their
         respective fees and a Bars object representing the distribution of fees across the ticks.
 
-        Parameters:
-        total_liq (Bars): A Bars object representing the total liquidity across ticks.
-        q_old (float): The initial quantity of liquidity.
-        q_new (float): The new quantity of liquidity after the change.
-        fee_rate (float): The rate at which fees are charged.
+        Args:
+            total_liq (Bars): A Bars object representing the total liquidity across ticks.
+            q_old (float): The initial quantity of liquidity.
+            q_new (float): The new quantity of liquidity after the change.
+            fee_rate (float): The rate at which fees are charged.
 
         Returns:
-        Tuple[dict, Bars]: A tuple containing:
-            - A dictionary mapping position identifiers (pid) to their respective fees.
-            - A Bars object representing the distribution of fees across the ticks.
+            Tuple[dict,Bars]: A tuple containing:
+                - A dictionary mapping position IDs (pid) to their respective fees.
+                - A Bars object representing the distribution of fees across the ticks.
         """
         t_old, t_new = [np.log(q) / np.log(1.0001) for q in [q_old, q_new]]
         if q_old < q_new:
@@ -450,7 +494,7 @@ class LiqTable:
             fees_pos = np.sum(share * (fees / share_norm), 1)
             return {pid: fees_pos[rid] for pid, rid in self.pid_to_rid.items()}, Bars(trunc_ticks, fees)
 
-    def _add_if_absent(self, pid) -> int:
+    def _add_if_absent(self, pid: int) -> int:
         """
         Adds a position identifier to the internal mapping if it is not already present.
 
@@ -459,11 +503,11 @@ class LiqTable:
         If there are any vacated row identifiers available, it reuses one of them; otherwise,
         it creates a new row identifier.
 
-        Parameters:
-        pid (int): The position identifier to be added or checked.
+        Args:
+            pid (int): The position ID to be added or checked.
 
         Returns:
-        int: The row identifier (rid) associated with the given position identifier.
+            int: The row identifier (rid) associated with the given position identifier.
         """
         if pid in self.pid_to_rid:
             return self.pid_to_rid[pid]
@@ -477,6 +521,16 @@ class LiqTable:
         return rid
 
     def _pop_pos(self, pid):
+        """
+        Remove a position from the internal mappings and mark its row as vacant.
+
+        This function removes a position identifier (pid) from the internal mapping,
+        sets the corresponding row in the liquidity table to zero, and marks the row
+        as vacant for potential reuse.
+
+        Args:
+            pid (int): The position ID to be removed.
+        """
         rid = self.pid_to_rid.pop(pid)
         self.rid_to_pid[rid] = -1
         self.TAB[rid] = 0.
@@ -487,6 +541,18 @@ class Pool:
     LOGBASE = np.log(1.0001)
 
     def __init__(self, price, usd_price0, usd_price1, time, fee=0, decimal0=0, decimal1=0):
+        """
+        Initialize a Pool object with the given parameters.
+
+        Args:
+            price (float): The initial price of the pool, representing how much Token 1 is worth in terms of Token 0.
+            usd_price0 (float): The USD price of Token 0.
+            usd_price1 (float): The USD price of Token 1.
+            time: The initial time for the pool's base time.
+            fee (float, optional): The fee rate for transactions in the pool. Defaults to 0.
+            decimal0 (int, optional): The decimal precision for Token 0. Defaults to 0.
+            decimal1 (int, optional): The decimal precision for Token 1. Defaults to 0.
+        """
         self.fee_rate = fee
         self.FX, self.FY = 10**(-decimal0), 10**(-decimal1),
         self.FP, self.FL = 10**(decimal0-decimal1), 10**(-(decimal0+decimal1)/2)
@@ -515,6 +581,20 @@ class Pool:
         self.price_change = {}
 
     def _get_amounts(self, price=None):
+        """
+        Calculate the total amounts of tokens x and y in the pool (including both NFT and FT positions) at a given price.
+
+        This function computes the total amounts of tokens x and y based on the current
+        liquidity positions and financial transaction deltas in the pool. If no price is
+        specified, it uses the current pool price.
+
+        Args:
+            price (float, optional): The price at which to calculate the token amounts. 
+                                     Defaults to the current pool price if not provided.
+
+        Returns:
+            Tuple[float, float]: A tuple containing the total amounts of tokens x and y.
+        """
         if price is None:
             price = self.price
 
@@ -532,6 +612,12 @@ class Pool:
         return x, y
 
     def validate_ft(self):
+        """
+        Validate the financial transactions (FT) deltas to ensure consistency.
+
+        This function checks the FT positions to ensure that there are no duplicate
+        ticks and that the liquidity does not become negative at any price range.
+        """
         liq = prev = 0
         for i, (tick, val) in enumerate(self.FT_deltas.items()):
             if i > 0 and prev == tick:
@@ -557,16 +643,16 @@ class Pool:
         This function updates the liquidity position of a given token within specified tick
         boundaries. It adjusts the liquidity and records any changes in the position.
 
-        Parameters:
-        token_id (int): The identifier of the token whose position is being updated.
-        liquidity (float): The amount of liquidity to be added or removed.
-        tl (int): The lower tick boundary for the liquidity position.
-        tu (int): The upper tick boundary for the liquidity position.
-        lp (int, optional): The liquidity provider's identifier. Defaults to the token_id if not provided.
-        timestamp (optional): The timestamp of the update. Used for tracking the timing of liquidity changes.
+        Args:
+            token_id (int): The ID of the token whose position is being updated.
+            liquidity (float): The amount of liquidity to be added or removed.
+            tl (int): The lower tick boundary for the liquidity position.
+            tu (int): The upper tick boundary for the liquidity position.
+            lp (int, optional): The liquidity provider's identifier. Defaults to the token_id if not provided.
+            timestamp (optional): The timestamp of the update. Used for tracking the timing of liquidity changes.
 
         Returns:
-        Tuple[float, float]: The amounts of tokens x and y resulting from the liquidity update.
+            Tuple[float,float]: The amounts of tokens x and y resulting from the liquidity update.
         """
         if lp is None:
             lp = token_id
@@ -603,15 +689,15 @@ class Pool:
         This function updates the pool's price to a new value, calculates the change in token amounts,
         and optionally computes and distributes fees based on the price change.
 
-        Parameters:
-        price_new (float): The new price after the swap.
-        usd0 (float): The updated USD price of token 0.
-        usd1 (float): The updated USD price of token 1.
-        compute_fee (bool, optional): Flag indicating whether to compute and apply fees. Defaults to True.
-        timestamp (optional): The timestamp of the swap operation, used for tracking price changes.
+        Args:
+            price_new (float): The new price after the swap.
+            usd0 (float): The updated USD price of token 0.
+            usd1 (float): The updated USD price of token 1.
+            compute_fee (bool, optional): Flag indicating whether to compute and apply fees. Defaults to True.
+            timestamp (optional): The timestamp of the swap operation, used for tracking price changes.
 
         Returns:
-        Tuple[float, float]: The change in amounts of tokens x and y resulting from the swap.
+            Tuple[float,float]: The change in amounts of tokens x and y resulting from the swap.
         """
         self.price, price_prev = price_new, self.price
         x0, y0 = self._get_amounts(price_prev)
@@ -655,16 +741,13 @@ class Pool:
         and last ending positions. It also optionally updates a progress bar to reflect the
         progress of the registration process.
 
-        Parameters:
-        updates (dict): A dictionary containing the latest updates to player positions, where
-                        keys are position identifiers and values are the updated liquidity amounts.
-        last_ending (dict): A dictionary containing the last known ending positions of players,
-                            where keys are position identifiers and values are the liquidity amounts.
-        bar (tqdm, optional): An optional tqdm progress bar object to visually track the progress
-                              of the registration process. Defaults to None.
-
-        Returns:
-        None
+        Args:
+            updates (dict): A dictionary containing the latest updates to player positions, where
+                            keys are position identifiers and values are the updated liquidity amounts.
+            last_ending (dict): A dictionary containing the last known ending positions of players,
+                                where keys are position identifiers and values are the liquidity amounts.
+            bar (tqdm, optional): An optional tqdm progress bar object to visually track the progress
+                                of the registration process. Defaults to None.
         """
         all_updates = {}
         if self.first_register:
@@ -686,6 +769,22 @@ class Pool:
                 bar.update()
 
     def report_profit(self, time, path=None, datetime=None):
+        """
+        Generate a report of the profit and performance metrics for the pool.
+
+        This function calculates the profit, fees, and other performance metrics for each player's
+        position in the pool. It generates a detailed report and optionally saves it to a CSV file
+        and a JSON file for further analysis.
+
+        Args:
+            time: The current time, used to reset the profit tracking.
+            path (str, optional): The directory path where the report files will be saved. Defaults to None.
+            datetime (str, optional): A string representing the current date and time, used for naming the report files. Defaults to None.
+
+        Returns:
+            Tuple: A tuple containing the pool instance, a DataFrame with the profit report, player fees, total fees, 
+                a snapshot of the liquidity bars, the datetime string, and the path where the files are saved.
+        """
         df, pos_deltas, bmap = [], [], {}
 
         ux_prev, uy_prev = bend_price(self.last_usd0, self.last_usd1, self.last_price * self.FP)
@@ -779,6 +878,22 @@ class Pool:
 
 
 def plot_dynamics(args: Tuple[Pool, pd.DataFrame, Bars, Bars, list, str, str]):
+    """
+    Generate and save a series of plots visualizing the dynamics of a liquidity pool.
+
+    This function creates various plots to analyze the performance and behavior of a liquidity pool,
+    including utility, fees, liquidity, price changes, and more. The plots are saved as a JPEG file.
+
+    Args:
+        args (Tuple[Pool, pd.DataFrame, Bars, Bars, list, str, str]): A tuple containing:
+            - Pool: The liquidity pool instance.
+            - pd.DataFrame: A DataFrame with aggregated data for plotting.
+            - Bars: A Bars object representing player fees.
+            - Bars: A Bars object representing total fees.
+            - list: A list of snapshots of liquidity bars.
+            - str: A string representing the date for naming the plot file.
+            - str: A string representing the path where the plot file will be saved.
+    """
     pool, df, player, total, snap, date, path = args
     df = df.drop(columns=['priceLow', 'priceHigh']).groupby('LP').agg('sum')
 
@@ -824,47 +939,3 @@ def plot_dynamics(args: Tuple[Pool, pd.DataFrame, Bars, Bars, list, str, str]):
     plt.cla()
     plt.clf()
     plt.close(fig)
-
-
-def main_liq_table_test():
-    tab = LiqTable()
-    tab.update_liquidity(1056, 3, 13, 12.)
-    tab.update_liquidity(1057, 5, 16, 4.)
-    print(tab)
-    tab.update_liquidity(1058, 13, 20, 33.)
-    tab.update_liquidity(1056, 3, 13, -12.)
-    tab.update_liquidity(1059, 3, 13, 22.)
-    print(tab)
-
-    tab.align([1, 4, 5, 7, 22])
-
-    # total_liquidity = Bars([3, 5, 13, 16, 20], [22, 26, 37, 33])
-    # print(tab.get_fees(total_liquidity, 18, 4, 0.5), '\n')
-    # print(tab.get_fees(total_liquidity, 18, 16, 0.5))
-    # print(tab.get_fees(total_liquidity, 16, 13, 0.5))
-    # print(tab.get_fees(total_liquidity, 13, 5, 0.5))
-    # print(tab.get_fees(total_liquidity, 5, 4, 0.5))
-    # tab.update_liquidity(1058, 4, 10, 4.)
-    print(tab)
-
-
-def main_histogram2d_test():
-    vx1 = Bars([4, 10, 16], [100, 200])
-    vx2 = Bars([2, 5], [1000])
-    h = Histogram2D()
-    h.merge(vx1, False)
-    h.merge(vx2, True)
-    print(h)
-
-    b = Bars([1, 3, 9, 17, 26], [1, 2, 3, 4])
-    h2, b2 = align_bars(h, b)
-    print(h2)
-    print(b2)
-
-    h2.fix(h)
-    print(h2)
-
-
-if __name__ == '__main__':
-    main_histogram2d_test()
-    # main_liq_table_test()
