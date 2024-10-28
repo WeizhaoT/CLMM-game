@@ -1,46 +1,43 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import scipy.optimize as opt
 
 import gc
 import warnings
 import matplotlib
 import matplotlib.patches as mpatches
 from matplotlib.patches import Rectangle
-from itertools import cycle
+from typing import Callable, List, Tuple, TYPE_CHECKING
 
 from library import Bars
+from library.util import color_cycle
+
+
+if TYPE_CHECKING:
+    from library.game import Game
+
 
 matplotlib.use('Agg')
 
 
 class OverdueError(Exception):
+    """ A custom exception raised when the optimization process exceeds the specified maximum number of epochs. """
+
     def __init__(self, *args: object) -> None:
         super().__init__(*args)
 
 
-def standard_deviation(PI):
-    return np.sqrt(sum(p * (i-(len(PI)-1)/2) ** 2 for i, p in enumerate(PI)))
-
-
-def raw_revenue(num_prices, ratio=1):
-    k = (num_prices-1) // 2
-    base = 1 / (ratio * k + k + 1)
-    return base * (ratio - (ratio - 1) * abs(np.arange(num_prices) - k) / k)
-
-
-def root(func, target=0, thr=1e-9, maxiter=10000):
+def root(func: Callable[[float], float], target: float = 0, thr: float = 1e-9, maxiter: int = 10000) -> float:
     """
     Finds the root of a given function using a binary search method.
 
     Parameters:
-    func (callable): The function for which the root is to be found.
-    target (float, optional): The target value for the function. Defaults to 0.
-    thr (float, optional): The threshold for convergence. Defaults to 1e-9.
-    maxiter (int, optional): The maximum number of iterations allowed. Defaults to 10000.
+        func (Callable[[float], float]): The function for which the root is to be found.
+        target (float, optional): The target value for the function. Defaults to 0.
+        thr (float, optional): The threshold for convergence. Defaults to 1e-9.
+        maxiter (int, optional): The maximum number of iterations allowed. Defaults to 10000.
 
     Returns:
-    float: The estimated root of the function.
+        float: The estimated root of the function where func(x) is approximately equal to the target.
     """
     f0 = func(0.)
     if abs(f0 - target) < thr:
@@ -66,21 +63,17 @@ def root(func, target=0, thr=1e-9, maxiter=10000):
 
 def single_range_br(val_x: float, val_y: float, il: float, bound: float, weights: Bars) -> float:
     """
-    Computes the optimal value of x that maximizes a utility function subject to a given impermanent loss constraint.
+    When LP can only deposit liquidity in a single range, compute its best response liquidity in that range
 
-    The utility function is defined as:
-    U = sum(f_m * x / (x + w_m)) - IL * x
-    where f_m are the fees and w_m are the weights.
-
-    Parameters:
-    val_x (float): The coefficient for the x component in the fee calculation.
-    val_y (float): The coefficient for the y component in the fee calculation.
-    il (float): The impermanent loss constraint.
-    bound (float): The upper bound for the value of x.
-    weights (Bars): An instance of Bars containing the weight intervals.
+    Args:
+        val_x (float): USD value of X tokens.
+        val_y (float): USD value of Y tokens.
+        il (float): The impermanent loss of the price range.
+        bound (float): The upper bound of liquidity.
+        weights (Bars): An instance of Bars containing the weights fo other LPs.
 
     Returns:
-    float: The optimal value of x that satisfies the impermanent loss constraint.
+        float: The optimal liquidity.
     """
 
     DX, DY = weights.T[0]**-.5 - weights.T[-1]**-.5, weights.T[-1]**.5 - weights.T[0]**.5
@@ -100,20 +93,20 @@ def single_range_br(val_x: float, val_y: float, il: float, bound: float, weights
     return root(grad, il, thr=1e-8)
 
 
-def IL(pstart, pend, a, b):
+def IL(pstart: Tuple[float, float, float], pend: Tuple[float, float, float], a: float, b: float):
     """
-    Calculate the impermanent loss between two price points within specified bounds.
+    Calculates the impermanent loss between two price states within a specified range.
 
     Parameters:
-    pstart (tuple): A tuple (q0, x0, y0) representing the initial state, where q0 is the initial price,
-                    x0 is the initial amount of asset x, and y0 is the initial amount of asset y.
-    pend (tuple): A tuple (q1, x1, y1) representing the final state, where q1 is the final price,
-                  x1 is the final amount of asset x, and y1 is the final amount of asset y.
-    a (float): The lower bound for the price.
-    b (float): The upper bound for the price.
+        pstart (Tuple[float, float, float]): The starting state represented as a tuple (q0, x0, y0),
+            where q0 is the initial price, x0 is the initial amount of asset X, and y0 is the initial amount of asset Y.
+        pend (Tuple[float, float, float]): The ending state represented as a tuple (q1, x1, y1),
+            where q1 is the final price, x1 is the final amount of asset X, and y1 is the final amount of asset Y.
+        a (float): The lower bound of the price range.
+        b (float): The upper bound of the price range.
 
     Returns:
-    float: The calculated impermanent loss between the two price points, adjusted for the specified bounds.
+        float: The calculated impermanent loss between the two states within the specified range.
     """
     q0, x0, y0 = pstart
     q1, x1, y1 = pend
@@ -122,23 +115,41 @@ def IL(pstart, pend, a, b):
     return (x1 * (p0**-.5-p1**-.5) + y1 * (p0**.5-p1**.5)) / (x0 * (p0**-.5-b**-.5) + y0 * (p0**.5-a**.5))
 
 
-def impermanent_loss_rate_agg(a, b, prices, probs, il_func, p0=None, **kwargs):
-    return sum(IL(p0, p, a, b) * pi for p, pi in zip(prices, probs))
+def convert_impermanent_loss(price_ticks: List[float],
+                             prices: List[Tuple[float, float, float]],
+                             probs: List[float],
+                             p0: Tuple[float, float, float]) -> np.ndarray:
+    """
+    Converts a series of price states and their probabilities into an array of impermanent losses for specified price ranges.
+
+    Parameters:
+        price_ticks (List[float]): A list of price tick values defining the boundaries of price ranges.
+        prices (List[Tuple[float, float, float]]): A list of tuples representing different price states, 
+            where each tuple contains (price, amount of asset X, amount of asset Y).
+        probs (List[float]): A list of probabilities associated with each price state.
+        p0 (Tuple[float, float, float]): The initial price state represented as a tuple (initial price, initial amount of asset X, initial amount of asset Y).
+
+    Returns:
+        np.ndarray: An array of impermanent losses calculated for each price range defined by the price ticks.
+    """
+    return np.array([
+        sum(IL(p0, p, a, b) * pi for p, pi in zip(prices, probs)) for a, b in zip(price_ticks[:-1], price_ticks[1:])
+    ])
 
 
-def convert_impermanent_loss(price_ticks, prices, probs, il_func, p0=None, **kwargs):
-    return np.array([impermanent_loss_rate_agg(price_ticks[l], price_ticks[l+1], prices, probs, il_func, p0, **kwargs) for l in range(len(price_ticks)-1)])
+def plot_dynamics_util(dynamics: List[Tuple[float, float, float]], figpath: str, converged: bool):
+    """
+    Plots the dynamics of a given optimization process, including step differences, value function, and utility over epochs.
 
+    Parameters:
+        dynamics (List[Tuple[float, float, float]]): A list of tuples where each tuple contains step difference, 
+            value function, and utility values for each epoch.
+        figpath (str): The file path where the plot will be saved.
+        converged (bool): A boolean indicating whether the optimization process has converged.
 
-TEXT_KWARGS = {
-    'fontsize': 'large',
-    'fontweight': 'demi',
-    'ha': 'center',
-    'va': 'bottom'
-}
-
-
-def plot_dynamics_util(dynamics, figpath, converged):
+    Returns:
+        None: The function saves the plot to the specified file path and does not return any value.
+    """
     stepdiff, vfunc, utility = zip(*dynamics)
     utility = np.array(utility)
     E = min(len(stepdiff), utility.shape[0])
@@ -148,7 +159,7 @@ def plot_dynamics_util(dynamics, figpath, converged):
     ncols = 2
     nrows = (N+1) // ncols + 1
 
-    PLOT_KWARGS = {'lw': .6, 'marker': None, 'markevery': .05}
+    _PLOT_KWARGS = {'lw': .6, 'marker': None, 'markevery': .05}
 
     plt.ioff()
     fig, axs = plt.subplots(nrows=nrows, ncols=ncols, figsize=(ncols*5, nrows*3.5))
@@ -156,15 +167,15 @@ def plot_dynamics_util(dynamics, figpath, converged):
 
     ax = axs[0]
     ax.set_title(r'$\|x^{{(t)}} - x^{{(t-1)}} \|_{{\infty}}$ ' + ('(DIVERGED)' if not converged else ''))
-    ax.plot(x, stepdiff, **PLOT_KWARGS)
+    ax.plot(x, stepdiff, **_PLOT_KWARGS)
 
     ax = axs[1]
     ax.set_title(r'$-V(x)$')
-    ax.plot(x, -np.array(vfunc), **PLOT_KWARGS)
+    ax.plot(x, -np.array(vfunc), **_PLOT_KWARGS)
 
     for i, ax in enumerate(axs[2:N+2]):
         ax.set_title(r'$U_{{{:d}}}(x^{{(t)}})$'.format(i+1))
-        ax.plot(x, utility[:, i], **PLOT_KWARGS)
+        ax.plot(x, utility[:, i], **_PLOT_KWARGS)
 
     for ax in axs:
         ax.set_yscale('log')
@@ -177,10 +188,74 @@ def plot_dynamics_util(dynamics, figpath, converged):
     gc.collect()
 
 
-def plot_strategy_util(budgets, strategy, utility, il, baseline=None, baseutil=None, baseil=None, fig=None, axs=None):
+def plot_dynamics_util(dynamics: List[Tuple[float, float, float]], figpath: str, converged: bool):
+    stepdiff, vfunc, utility = zip(*dynamics)
+    utility = np.array(utility)
+    E = min(len(stepdiff), utility.shape[0])
+    N = utility.shape[1]
+    x = np.arange(1, E+1)
+
+    ncols = 2
+    nrows = (N+1) // ncols + 1
+
+    _PLOT_KWARGS = {'lw': .6, 'marker': None, 'markevery': .05}
+
+    plt.ioff()
+    fig, axs = plt.subplots(nrows=nrows, ncols=ncols, figsize=(ncols*5, nrows*3.5))
+    axs = axs.flatten()
+
+    ax = axs[0]
+    ax.set_title(r'$\|x^{{(t)}} - x^{{(t-1)}} \|_{{\infty}}$ ' + ('(DIVERGED)' if not converged else ''))
+    ax.plot(x, stepdiff, **_PLOT_KWARGS)
+
+    ax = axs[1]
+    ax.set_title(r'$-V(x)$')
+    ax.plot(x, -np.array(vfunc), **_PLOT_KWARGS)
+
+    for i, ax in enumerate(axs[2:N+2]):
+        ax.set_title(r'$U_{{{:d}}}(x^{{(t)}})$'.format(i+1))
+        ax.plot(x, utility[:, i], **_PLOT_KWARGS)
+
+    for ax in axs:
+        ax.set_yscale('log')
+        ax.set_xlabel('Epochs')
+        ax.grid(True)
+
+    fig.tight_layout()
+    fig.savefig(figpath)
+    plt.close('all')
+    gc.collect()
+
+
+def plot_strategy_util(budgets: List[float],
+                       strategy: np.ndarray,
+                       utility: np.ndarray,
+                       il: np.ndarray,
+                       baseline=None,
+                       baseutil=None,
+                       baseil=None,
+                       fig=None,
+                       axs: List[plt.Axes] = None):
+    """
+    Plots the strategy utilization, utility, and impermanent loss for a given set of strategies and budgets.
+
+    Parameters:
+        budgets (List[float]): A list of n budget values for liquidity providers (LP). n is the number of LPs
+        strategy (np.ndarray): A 2D array of shape (n, m) representing the strategy allocations for each LP across different ranges. \
+            m is the number of price ranges.
+        utility (np.ndarray): A 2D array of shape (n, m) representing the utility values for each LP across different ranges.
+        il (np.ndarray): A 2D array of shape (n, m) representing the impermanent loss values for each LP across different ranges.
+        baseline (optional): NOT IMPLEMENTED
+        baseutil (optional): NOT IMPLEMENTED
+        baseil (optional): NOT IMPLEMENTED
+        fig (optional): A matplotlib figure object to use for plotting.
+        axs (List[plt.Axes], optional): A list of matplotlib axes objects to use for plotting.
+    """
     n, m = np.shape(strategy)
 
-    usum, il = np.sum(utility, 1), np.array(il) / np.sum(strategy, 1)
+    _TEXT_KWARGS = {'fontsize': 'large', 'fontweight': 'demi', 'ha': 'center',  'va': 'bottom'}
+
+    usum, il = np.sum(utility, 1), np.sum(il, 1) / np.sum(strategy, 1)
 
     has_baseline, update_fig = (baseline is not None), False
     if axs is None:
@@ -195,9 +270,6 @@ def plot_strategy_util(budgets, strategy, utility, il, baseline=None, baseutil=N
         ax.set_xticks(range(1, n+1))
         ax.grid(axis='y')
 
-    def colorgen():
-        return cycle(plt.rcParams['axes.prop_cycle'].by_key()['color'])
-
     def add_baseline_shadow(ax, i, h, baseh):
         if has_baseline:
             ax.add_patch(Rectangle((i+.5, 0), 1, min(h[i], baseh[i]),
@@ -206,8 +278,8 @@ def plot_strategy_util(budgets, strategy, utility, il, baseline=None, baseutil=N
                 ax.add_patch(Rectangle((i+.5, h[i]), 1, baseh[i]-h[i],
                              edgecolor='black', fill=False, lw=0, hatch='///', alpha=.5))
 
-    COLOR_ITER = colorgen()
-    patches = [mpatches.Patch(color=next(COLOR_ITER), label=f'[{l}, {l+1}]') for l in range(m)]
+    cs = color_cycle()
+    patches = [mpatches.Patch(color=next(cs), label=f'[{l}, {l+1}]') for l in range(m)]
     fig.legend(handles=patches, loc='upper center', bbox_to_anchor=[.5, 1.03], ncol=12)
 
     # ================================ Strategy ================================
@@ -216,12 +288,12 @@ def plot_strategy_util(budgets, strategy, utility, il, baseline=None, baseutil=N
     ax.set_ylim(0, budgets[-1] * 1.05)
 
     for i in range(n):
-        h, COLOR_ITER = 0, colorgen()
+        h, cs = 0, color_cycle()
         for s in strategy[i]:
-            ax.add_patch(Rectangle((i+.5, h), 1, s, facecolor=next(COLOR_ITER), lw=0.))
+            ax.add_patch(Rectangle((i+.5, h), 1, s, facecolor=next(cs), lw=0.))
             h += s
 
-        ax.text(i+1, h-budgets[-1]*.05, f'{h:.4f}', color='white', **TEXT_KWARGS)
+        ax.text(i+1, h-budgets[-1]*.05, f'{h:.4f}', color='white', **_TEXT_KWARGS)
 
     for i in range(n):
         ax.add_patch(Rectangle((i+.5, 0), 1, budgets[i], edgecolor='black', fill=False, lw=1.5))
@@ -235,12 +307,12 @@ def plot_strategy_util(budgets, strategy, utility, il, baseline=None, baseutil=N
     ax.set_ylim(0, ymax * 1.05)
 
     for i, urow in enumerate(utility):
-        h, COLOR_ITER = 0, colorgen()
+        h, cs = 0, color_cycle()
         for u in urow:
-            ax.add_patch(Rectangle((i+.5, h), 1, u, facecolor=next(COLOR_ITER), lw=0.))
+            ax.add_patch(Rectangle((i+.5, h), 1, u, facecolor=next(cs), lw=0.))
             h += u
 
-        ax.text(i+1, h-ymax*.05, f'{h:.4f}', color='white', **TEXT_KWARGS)
+        ax.text(i+1, h-ymax*.05, f'{h:.4f}', color='white', **_TEXT_KWARGS)
 
     for i in range(n):
         ax.add_patch(Rectangle((i+.5, 0), 1, usum[i], edgecolor='black', fill=False, lw=1.5))
@@ -258,7 +330,7 @@ def plot_strategy_util(budgets, strategy, utility, il, baseline=None, baseutil=N
             ax.add_patch(Rectangle((i+.5, 0), 1, baseil[i]/baseline[i],
                          edgecolor='black', fill=False, lw=1.5, ls=':', hatch='///', alpha=.5))
 
-        txt = ax.text(i+1, il[i]-ymax*.06, f'{il[i]:.4f}', color='blue', **TEXT_KWARGS)
+        txt = ax.text(i+1, il[i]-ymax*.06, f'{il[i]:.4f}', color='blue', **_TEXT_KWARGS)
         txt.set_bbox(dict(facecolor='white', alpha=0.8, edgecolor='white'))
 
     fig.tight_layout(rect=[0, 0, 1, 0.95])
@@ -267,6 +339,16 @@ def plot_strategy_util(budgets, strategy, utility, il, baseline=None, baseutil=N
 
 
 def proj_simpleton(x, B):
+    """
+    Projects a vector onto the simplex defined by the constraint that the sum of its elements is less than or equal to B.
+
+    Parameters:
+        x (array-like): The input vector to be projected.
+        B (float): The upper bound for the sum of the elements of the projected vector.
+
+    Returns:
+        np.ndarray: The projected vector where all elements are non-negative and the sum of the elements is less than or equal to B.
+    """
     x = np.array(x)
     p = np.maximum(0, -np.sort(-x))
 
@@ -282,115 +364,45 @@ def proj_simpleton(x, B):
 
 
 class Optimizer:
-    def __init__(self, game, **kwargs):
+    """Base class for Nash equilibrium solving algorithms."""
+
+    def __init__(self, game: Game, **kwargs):
         self.game = game
 
-    def update(self, lp, par, x0, **kwargs):
+    def update(self, x, **kwargs):
         pass
 
 
-class BestResponseScipy(Optimizer):
-    def update(self, lp, par, x0=None):
-        if x0 is None:
-            x0 = self.game.B[lp] / len(self.game.fee) / 2.
+class Relaxation(Optimizer):
+    """Relaxation method."""
 
-        def _neg_utility(xlp, xsum):
-            lp_weights = xlp ** self.game.beta
-            return np.sum(self.game.ilrate * xlp) - np.sum(self.game.fee * lp_weights / (lp_weights + xsum + self.game.chi))
+    def __init__(self, game: Game, gamma: float, **kwargs):
+        """
+        Initializes the Relaxation optimizer with a game instance and a relaxation parameter.
 
-        res: opt.OptimizeResult = opt.minimize(_neg_utility, x0=x0, args=(par,), method='trust-constr', tol=1e-10,
-                                               bounds=[[0, None]] * len(self.game.fee),
-                                               constraints=opt.LinearConstraint([1] * len(self.game.fee), 0, self.game.B[lp]))
-        if not res.success:
-            raise ValueError(f'Optimization failed at LP {lp}!\n    reason={res.message}')
+        Parameters:
+            game (Game): An instance of the Game class representing the game to be optimized.
+            gamma (float): The relaxation parameter that controls the step size in the update process.
+            **kwargs: Additional keyword arguments for further customization.
 
-        return res.x
-
-
-class BestResponse(Optimizer):
-    def update(self, lp, par, *args, **kwargs):
-        return self.game._best_response_single(lp, par)
-
-
-class ExactLineSearch(Optimizer):
-    def __init__(self, game, gamma, **kwargs):
+        Returns:
+            None
+        """
         super().__init__(game)
-        self.epochs = 0
+        self.epochs: int = 0
         self.gamma = gamma
 
     def update(self, x, **kwargs):
+        """
+        Updates the strategy using the relaxation method.
+
+        Args:
+            x (array-like): The current strategy vector.
+            **kwargs: Additional keyword arguments.
+
+        Returns:
+            np.ndarray: The updated strategy vector after applying the relaxation method.
+        """
         y = self.game.best_response(x)
         d = y - x
         return x + d * self.gamma / (self.epochs + 1)
-
-
-class InexactLineSearch(Optimizer):
-    def __init__(self, game, beta, sigma):
-        super().__init__(game)
-        self.beta = beta
-        self.sigma = sigma
-
-    def update(self, x, **kwargs):
-        y = self.game.best_response(x)
-        d = y - x
-        v0 = self.game.vfunc(x, y)
-        delta = np.sqrt(np.sum(d ** 2)) * self.sigma
-
-        left, right = 0, 1
-        while True:
-            t = self.beta ** right
-            if self.game.vfunc(x + d*t) > v0 - delta * (t**2):
-                break
-            right *= 2
-
-        while right - left > 1:
-            mid = (right + left) // 2
-            t = self.beta ** mid
-            if self.game.vfunc(x + d*t) > v0 - delta * (t**2):
-                right = mid
-            else:
-                left = mid
-
-        return x + d*(self.beta ** left)
-
-
-class MomentumGradientAscent(Optimizer):
-    def __init__(self, game, lr=5e0, beta=.8, **kwargs):
-        super().__init__(game)
-        self.beta = beta
-        self.momentum = [0.] * game.n
-
-        if isinstance(lr, (float, int)):
-            self.lr = LearningRateScheduler(game.n, lr)
-        else:
-            self.lr = lr
-
-        self.lr_step = 0
-
-    def update(self, lp, par, x0):
-        self.lr_step = self.lr.sample()
-        grad = self.game.fee * (par + self.game.chi) * x0**(self.game.beta-1) / \
-            np.maximum(1e-7, par + x0**self.game.beta + self.game.chi) ** 2 - self.game.ilrate
-        self.momentum[lp] = self.beta * self.momentum[lp] + (1-self.beta) * self.lr_step * grad
-        return proj_simpleton(x0 + self.momentum[lp], self.game.B[lp])
-
-
-class LearningRateScheduler:
-    def __init__(self, N, lr, *args, **kwargs) -> None:
-        self.lr = lr
-        self.N = N
-
-    def sample(self):
-        return self.lr
-
-
-class CosineAnnealingScheduler(LearningRateScheduler):
-    def __init__(self, N, lr, lr_min, epochs, *args, **kwargs) -> None:
-        super().__init__(N, lr)
-        self.lr_min = lr_min
-        self.epochs = epochs
-        self.cnt = -1
-
-    def sample(self):
-        self.cnt = (self.cnt + 1) % (self.N * self.epochs)
-        return self.lr_min + (self.lr - self.lr_min) * (.5 + .5 * np.cos((self.cnt // self.N) * np.pi / self.epochs))

@@ -4,30 +4,51 @@ import heapq
 import bisect
 import numpy as np
 
-from typing import List, Tuple
+from typing import List, Tuple, Union
 from library.sysutil import LXC
 
 
 def express(v):
+    """
+    Format a value as a string, applying a specific style if the value is not close to zero.
+
+    Args:
+        v (float): The value to be formatted.
+
+    Returns:
+        str: The formatted string representation of the value. If the value is close to zero, it returns the value as a plain string.
+            Otherwise, it applies a specific style using LXC.green_lt.
+    """
     return f'{v}' if np.isclose(v, 0, atol=1e-5) else LXC.green_lt(f'{v}')
 
 
 def t2p(*ticks):
+    """
+    Convert tick values to price values using a specific exponential formula.
+
+    Args:
+        ticks (float): One or more tick values to be converted.
+
+    Returns:
+        list or float: A list of price values if multiple tick values are provided,
+                       or a single price value if only one tick value is provided.
+    """
     return [1.0001 ** t for t in ticks] if len(ticks) > 1 else 1.0001 ** ticks[0]
 
 
 class Bars:
-    def __init__(self, ticks=[], values=[]) -> None:
+    def __init__(self, ticks: List[float] = [], values: List[float] = []) -> None:
         """
-        Initializes a Bars object with specified ticks and values.
+        Initialize a Bars object with specified ticks and values.
 
-        Parameters:
-        ticks (list): A list of tick values. Must contain more than one element.
-        values (list): A list of values corresponding to the intervals between ticks.
-                       The length of values should be one less than the length of ticks.
+        Args:
+            ticks (List[float]): A list of tick values representing the boundaries of intervals.
+                                Must contain more than one tick if provided.
+            values (List[float]): A list of values corresponding to the intervals defined by the ticks.
+                                The length of values must be one less than the length of ticks.
 
         Raises:
-        ValueError: If a single tick is provided or if the lengths of ticks and values do not match the expected relationship.
+            ValueError: If a single tick is provided, or if the number of values does not match the number of intervals.
         """
         if len(ticks) == 1:
             raise ValueError(f'Single tick {ticks} forbidden')
@@ -85,25 +106,18 @@ class Bars:
             for i in range(len(self.V)):
                 yield (self.V[i], self.T[i], self.T[i+1])
 
-    def rebase(self, ticks):
-        _, bars = align_bars(Bars(ticks), self, standard=0)
-        self.T, self.V = bars.T, bars.V
-
-    def overlap(self, array, budget, i=None, j=None):
+    def overlap(self, array: List[float], budget: float, i: int = None, j: int = None):
         """
-        Calculate the overlap between the current Bars object and another array of values.
+        Calculate the overlap (TV distance) between the current Bars object and a given array over a specified budget.
 
-        Parameters:
-        array (Bars or list): The target array or Bars object to compare against.
-        budget (float): The budget value used for normalization in the overlap calculation.
-        i (int, optional): The starting index for the overlap calculation. Defaults to the beginning of the Bars.
-        j (int, optional): The ending index for the overlap calculation. Defaults to the end of the Bars.
+        Args:
+            array (list or Bars): The array or Bars object to compare against the current Bars object.
+            budget (float): The budget value used for normalization in the overlap calculation.
+            i (int, optional): The starting index for the overlap calculation. Defaults to the beginning of the Bars.
+            j (int, optional): The ending index for the overlap calculation. Defaults to the end of the Bars.
 
         Returns:
-        float: The calculated overlap value, normalized by the budget. Returns 0 if the overlap is close to zero.
-
-        Raises:
-        ValueError: If the sizes of the specified range in the Bars and the target array do not match.
+            float: The calculated overlap value, normalized by the budget. Returns 0 if the overlap is close to zero.
         """
         if i is None:
             i = 0
@@ -121,15 +135,19 @@ class Bars:
 
     def impermanent_loss(self, q0: float, p1: Tuple[float, float, float], asliq: bool = True) -> float:
         """
-        Calculate the impermanent loss for a given initial quantity and price changes.
+        Calculate the impermanent loss for a given initial and final state of a liquidity pool.
 
-        Parameters:
-        q0 (float): The initial quantity.
-        p1 (Tuple[float, float, float]): A tuple containing the new quantity and two price factors (q1, px1, py1).
-        asliq (bool, optional): A flag indicating whether the calculation is in liquidity terms. Defaults to True.
+        Args:
+            q0 (float): The initial quantity or price level of the asset in the pool.
+            p1 (Tuple[float, float, float]): A tuple containing the final state parameters:
+                - q1 (float): The final quantity or price level of the asset in the pool.
+                - px1 (float): The price of the first asset in the final state.
+                - py1 (float): The price of the second asset in the final state.
+            asliq (bool, optional): A flag indicating whether the calculation is performed in liquidity terms (or cash terms). Defaults to True.
 
         Returns:
-        float: The calculated impermanent loss.
+            float: The calculated impermanent loss value, representing the loss incurred due to holding assets in a liquidity pool
+                   compared to holding them separately.
         """
         assert asliq
         q1, px1, py1 = p1
@@ -138,10 +156,28 @@ class Bars:
         return sum(self.V * (px1 * (1/r0-1/r1) + py1 * (r0-r1)))
 
     def margins(self, tol=1e-5) -> Tuple[float, float]:
+        """
+        Determine the margin tick values of the Bars object (excluding zeros on both sides).
+
+        Args:
+            tol (float, optional): The tolerance level used to determine significant values. Defaults to 1e-5.
+
+        Returns:
+            Tuple[float, float]: A tuple containing the start and end tick values that define the margins of the Bars object.
+        """
         i, j = self.margin_idxs(tol)
         return self.T[i], self.T[j]
 
     def margin_idxs(self, tol=1e-5) -> Tuple[int, int]:
+        """
+        Determine the indices of the margin ticks in the Bars object, excluding values below a specified tolerance.
+
+        Args:
+            tol (float, optional): The tolerance level used to determine significant values. Defaults to 1e-5.
+
+        Returns:
+            Tuple[int, int]: A tuple containing the start and end indices that define the margins of the Bars object.
+        """
         i, j = 0, len(self)-1
         M = max(self.V) * tol
         while i < len(self) and self.V[i] < M:
@@ -159,10 +195,21 @@ class Bars:
     def b(self, i):
         return self.T[i+1]
 
-    def bar(self, ax, **kwargs):
+    def barplot(self, ax, **kwargs):
         ax.bar(self.T[:-1], self.V, width=np.array(self.T[1:])-np.array(self.T[:-1]), align='edge', **kwargs)
 
-    def from_delta(deltas: List[tuple], sort=False, assert_positive=True) -> Bars:
+    def from_delta(deltas: List[tuple], sort: bool = False, assert_positive: bool = True) -> Bars:
+        """
+        Create a Bars object from a list of delta tuples, optionally sorting and asserting positivity.
+
+        Args:
+            deltas (List[tuple]): A list of tuples where each tuple contains a tick value and a delta value.
+            sort (bool, optional): A flag indicating whether to sort the deltas by tick values. Defaults to False.
+            assert_positive (bool, optional): A flag indicating whether to assert that all resulting values are non-negative. Defaults to True.
+
+        Returns:
+            Bars: A Bars object constructed from the provided deltas, with ticks and values derived from the deltas.
+        """
         ticks, values = [], []
         i = v = 0
         if sort:
@@ -183,6 +230,14 @@ class Bars:
         return Bars(ticks, values)
 
     def to_delta(self) -> List[tuple]:
+        """
+        Convert the Bars object into a list of delta tuples.
+
+        Returns:
+            List[tuple]: A list of tuples where each tuple contains a tick value and the change in value
+                         from the previous tick. The last tuple includes the last tick and the negative
+                         of the last value to ensure the sum of deltas equals zero.
+        """
         prev_v, deltas = 0, []
         for i in range(len(self)):
             deltas.append((self.T[i], self.V[i] - prev_v))
@@ -190,27 +245,19 @@ class Bars:
 
         return deltas + [(self.T[-1], -self.V[-1])]
 
-    def average(self, geometric=True, default=0.):
-        dividend = divisor = 0.
-        for L, a, b in self.intervals():
-            if geometric:
-                a, b = np.log(a), np.log(b)
-            dividend += L/2 * (b**2 - a**2)
-            divisor += L * (b-a)
-
-        if divisor == 0:
-            return default
-        return np.exp(dividend / divisor) if geometric else dividend / divisor
-
     def resample_fee(self, ticks: list, is_token_0: bool) -> Bars:
         """
-        Resample the fee distribution over a new set of ticks.
+        Resample the fee distribution over a new set of ticks. 
+        When interval is broken, the corresponding value is also **broken pro rata**. 
+        Upon sampling [c, d] out of interval [a, b], fee percentage is proportional to 
+        - If `is_token_0`, (sqrt(d) - sqrt(c)) / (sqrt(b) - sqrt(a))
+        - Otherwise, (1/sqrt(c) - 1/sqrt(d)) / (1/sqrt(a) - 1/sqrt(b))
 
-        Parameters:
+        # Parameters:
         ticks (list): A list of tick values to resample the fee distribution over.
         is_token_0 (bool): A flag indicating whether the calculation is for token 0.
 
-        Returns:
+        # Returns:
         Bars: A new Bars object representing the resampled fee distribution.
         """
         i = j = curr = 0
@@ -238,15 +285,15 @@ class Bars:
 
     def calculate_fee(self, q_old: float, q_new: float, fee_rate: float) -> Bars:
         """
-        Calculate the fees based on the change in pool price and the fee rate.
+        Calculate the fees incurred over a range of ticks when transitioning from an old quantity to a new quantity.
 
-        Parameters:
-        q_old (float): The initial pool price before the change.
-        q_new (float): The new pool price after the change.
-        fee_rate (float): The rate at which the fee is calculated.
+        Args:
+            q_old (float): The initial price.
+            q_new (float): The final price.
+            fee_rate (float): The fee rate applied to the transaction.
 
         Returns:
-        Bars: A new Bars object representing the calculated fees over the specified tick intervals.
+            Bars: A Bars object representing the calculated fees over the specified range of ticks.
         """
         fees = []
         t_old, t_new = [np.log(q) / np.log(1.0001) for q in [q_old, q_new]]
@@ -265,16 +312,18 @@ class Bars:
 
         return Bars(tick_slice, fees)
 
-    def align(self, ticks, force_bounds=False) -> Bars:
+    def align(self, ticks: List[float], force_bounds: bool = False) -> Bars:
         """
-        Aligns the current Bars object with a new set of ticks, optionally forcing bounds.
+        Align the current Bars object to a new set of tick values, optionally enforcing boundary conditions. 
+        When interval is broken, the corresponding value **does not change**. Used only on liquidity distributions. 
 
-        Parameters:
-        ticks (list): A list of tick values to align with the current Bars object.
-        force_bounds (bool, optional): A flag indicating whether to force the alignment to respect the bounds of the new ticks. Defaults to False.
+        Args:
+            ticks (List[float]): A list of new tick values to align the Bars object to.
+            force_bounds (bool, optional): A flag indicating whether to enforce that the new ticks are within the bounds
+                                           of the current Bars object. Defaults to False.
 
         Returns:
-        Bars: A new Bars object with ticks and values aligned to the specified ticks.
+            Bars: A new Bars object with ticks aligned to the specified list, and values adjusted accordingly.
         """
         newT, newV = [], []
         i = j = 0
@@ -299,12 +348,31 @@ class Bars:
 
 
 class LiqConverter:
+    """ Converts representation of an action between cash distribution and liquidity distribution."""
+
     def __init__(self, q, usdx, usdy):
+        """
+        Initialize a LiqConverter object with specified parameters.
+
+        Args:
+            q (float): The quantity or price level used for conversion calculations.
+            usdx (float): The USD value associated with X.
+            usdy (float): The USD value associated with Y.
+        """
         self.q = q
         self.usdx = usdx
         self.usdy = usdy
 
     def to_liq(self, cash: Bars):
+        """
+        Convert a Bars object representing cash values into liquidity values.
+
+        Args:
+            cash (Bars): A Bars object representing liquidity distribution in cash.
+
+        Returns:
+            Bars: A new Bars object with liquidity values corresponding to the price intervals.
+        """
         if cash.empty():
             return Bars()
 
@@ -315,6 +383,15 @@ class LiqConverter:
         return Bars(cash.T, res)
 
     def to_cash(self, liq: Bars):
+        """
+        Convert a Bars object representing liquidity values into cash values.
+
+        Args:
+            liq (Bars): A Bars object representing liquidity distribution.
+
+        Returns:
+            Bars: A new Bars object with cash values corresponding to the price intervals.
+        """
         if liq.empty():
             return Bars()
 
@@ -325,51 +402,19 @@ class LiqConverter:
 
         return Bars(liq.T, res)
 
-    def single_range(self, ticks, rewards, thr=.7):
+    def overlap_general(self, budget: float, action_usd: Bars, *baselines_usd: Bars) -> Union[float, List[float]]:
         """
-        Determine the optimal range of ticks that captures a specified threshold of rewards.
+        Calculate the overlap between a given action in USD and one or more baseline USD distributions. 
+        Their ticks may not be necessarily aligned. 
 
-        Parameters:
-        ticks (list): A list of tick values representing the range boundaries.
-        rewards (list): A list of reward values corresponding to each tick interval.
-        thr (float, optional): The threshold proportion of total rewards to capture. Defaults to 0.7.
+        Args:
+            budget (float): The budget value used for normalization in the overlap calculation.
+            action_usd (Bars): A Bars object representing the action distribution in USD.
+            baselines_usd (Bars): One or more Bars objects representing baseline distributions in USD.
 
         Returns:
-        tuple: A tuple containing the start tick, end tick, and the minimum distance (dmin) 
-               for the optimal range that captures the specified threshold of rewards.
-        """
-        thr = np.round(thr*sum(rewards), 9)
-        imin = jmin = dmin = float('inf')
-        r = i = j = 0
-        while j < len(ticks):
-            if r < thr:
-                if j == len(ticks)-1:
-                    break
-                r += rewards[j]
-                j += 1
-            else:
-                qm = min(ticks[j], max(ticks[i], self.q))
-                d = self.usdx * (qm**-.5 - ticks[j]**-.5) + self.usdy * (qm**.5 - ticks[i]**.5)
-                if dmin > d:
-                    imin, jmin, dmin = i, j, d
-
-                r -= rewards[i]
-                i += 1
-
-        return ticks[imin], ticks[jmin], dmin
-
-    def overlap_general(self, budget, action_usd: Bars, *baselines_usd: Bars):
-        """
-        Calculate the overlap between a given action in USD and multiple baseline USD Bars.
-
-        Parameters:
-        budget (float): The budget value used for normalization in the overlap calculation.
-        action_usd (Bars): The Bars object representing the action in USD to compare against the baselines.
-        baselines_usd (Bars): One or more Bars objects representing the baseline USD values for comparison.
-
-        Returns:
-        list or float: A list of overlap values for each baseline if multiple baselines are provided,
-                       or a single overlap value if only one baseline is provided.
+            Union[float,List[float]]: A list of overlap values for each baseline if multiple baselines are provided,
+                                      or a single overlap value if only one baseline is provided.
         """
         liq, olaps = self.to_liq(action_usd), []
         for baseline in baselines_usd:
@@ -379,18 +424,20 @@ class LiqConverter:
         return olaps if len(baselines_usd) > 1 else olaps[0]
 
 
-def align_bars(*bars: Bars, default=0, standard=-1):
+def align_bars(*bars: Bars, default: float = 0, standard: int = -1) -> List[Bars]:
     """
-    Aligns multiple Bars objects to a common set of ticks, filling in missing values with a default.
+    Align multiple Bars objects to a common set of tick values, optionally using a standard Bars object
+    to define the range of ticks. This function ensures that all Bars objects have the same tick intervals,
+    filling in missing values with a default value.
 
-    Parameters:
-    bars (Bars): One or more Bars objects to be aligned.
-    default (float, optional): The default value to use for missing intervals. Defaults to 0.
-    standard (int, optional): The index of the Bars object to use as the standard for determining the range of ticks. 
-                              If negative, the full range of all Bars is used. Defaults to -1.
+    Args:
+        bars (Bars): One or more Bars objects to be aligned.
+        default (float, optional): The default value to use for missing intervals. Defaults to 0.
+        standard (int, optional): The index of the Bars object to use as the standard for tick range.
+                                  If negative, the full range of ticks from all Bars is used. Defaults to -1.
 
     Returns:
-    list: A list of new Bars objects, each aligned to the common set of ticks with values filled in as necessary.
+        List[Bars]: A list of new Bars objects, each aligned to the common set of tick values.
     """
     H = len(bars)
     if H == 1:
@@ -425,30 +472,3 @@ def align_bars(*bars: Bars, default=0, standard=-1):
             progress[i] = j+1
 
     return [type(bar)(t, uu) for bar, uu in zip(bars, u)]
-
-
-def main_bars_test_1():
-    h1 = Bars([1, 4, 9, 16], [2, 3, 4])
-    h2 = Bars([22, 26, 30], [5, 8])
-    d1 = h1.to_delta()
-    h3 = Bars.from_delta(d1)
-
-    b1, b2 = align_bars(h1, h2, default=0, standard=1)
-
-    print(h1, b1, sep='\n', end='\n\n')
-    print(h2, b2, sep='\n')
-    print(h1.to_delta())
-    print(h3)
-
-
-def main_bars_test_2():
-    h1 = Bars([4, 8, 16], [1, 2])
-    print(h1.average(geometric=True))
-    h1 = h1.align([5, 10], force_bounds=True)
-    print(h1)
-    # print(h1)
-
-
-if __name__ == '__main__':
-    main_bars_test_2()
-    pass
