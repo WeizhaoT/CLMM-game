@@ -1,5 +1,5 @@
 # TL;DR
-This repo is a game theoretical analyzer for liquidity providing (LP'ing) on concentrated liquidity market makers ([CLMMs](https://coinmarketcap.com/community/articles/65608f0cc54ab771279066a5/)).
+This repo is a game theoretical analyzer for liquidity providing (LP'ing) on concentrated liquidity market makers ([CLMMs](https://coinmarketcap.com/community/articles/65608f0cc54ab771279066a5/)). It is the core implementation of our [paper](https://arxiv.org/abs/2411.10399) **_Game Theoretic Liquidity Provisioning in Concentrated Liquidity Market Makers_** written by **_Weizhao Tang, Rachid El-Azouzi, Cheng Han Lee, Ethan Chan, and Giulia Fanti_**. If you would like to use this codebase or cite our work, please read details in [references](References). 
 
 The workflow consists of the following steps:
 1. Prepare csv tables with the same scheme as in [example-liquidity](example-liquidity).<br>
@@ -250,6 +250,20 @@ python3 inert_test.py -p <pool_id> [-s <skip_prob>] -u <U[0], U[1], ...> -l <L[0
 - Pickled data: `inert_test_result/I_BR-<pool_id>.pkl`. 
 - json preview: `inert_test_result/I_BR-<pool_id>.json` (only includes means of utility and GT overlap for each inert expansion parameter).
 
-# Ending Remarks
+# References
+If you use this code in a publication, please cite the following [work](https://arxiv.org/abs/2411.10399):
 
-Please check our [paper](TODO) for more details.
+#### Plain Text:
+```
+Tang, Weizhao, et al. "Game Theoretic Liquidity Provisioning in Concentrated Liquidity Market Makers." arXiv preprint arXiv:2411.10399 (2024).
+```
+
+#### BibTeX: 
+```
+@article{tang2024game,
+  title={Game Theoretic Liquidity Provisioning in Concentrated Liquidity Market Makers},
+  author={Tang, Weizhao and El-Azouzi, Rachid and Lee, Cheng Han and Chan, Ethan and Fanti, Giulia},
+  journal={arXiv preprint arXiv:2411.10399},
+  year={2024}
+}
+````
