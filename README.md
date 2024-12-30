@@ -3,7 +3,7 @@ This repo is a game theoretical analyzer for liquidity providing (LP'ing) on con
 
 The workflow consists of the following steps:
 1. Prepare csv tables with the same scheme as in [example-liquidity](example-liquidity).<br>
-<span style="color:gray"><sub>They can be crawled from a fully-synced blockchain node, or provided by [Allium](https://www.allium.so/).</sub></span>
+<span style="color:gray"><sub>They can be crawled from a fully-synced blockchain node, or provided by [Allium](https://www.allium.so/). To test-use, you can rename `example-liquidity` to `liquidity`.</sub></span>
    - All blockchain [**events**](example-liquidity/2697585-eth-usdc-fee-100/2697585-Total.csv) associated with a liquidity pool
    - All liquidity [**positions**](example-liquidity/2697585-eth-usdc-fee-100/2697585-Positions.csv) identified by non-fungible tokens (NFTs)
    - All liquidity [**changes**](example-liquidity/2697585-eth-usdc-fee-100/2697585-Liquidity.csv) of the NFT positions
