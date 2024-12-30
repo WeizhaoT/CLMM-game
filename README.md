@@ -1,5 +1,5 @@
 # TL;DR
-This repo is a game theoretical analyzer for liquidity providing (LP'ing) on concentrated liquidity market makers ([CLMMs](https://coinmarketcap.com/community/articles/65608f0cc54ab771279066a5/)). It is the core implementation of our [paper](https://arxiv.org/abs/2411.10399) **_Game Theoretic Liquidity Provisioning in Concentrated Liquidity Market Makers_** written by **_Weizhao Tang, Rachid El-Azouzi, Cheng Han Lee, Ethan Chan, and Giulia Fanti_**. If you would like to use this codebase or cite our work, please read details in [references](References). 
+This repo is a game theoretical analyzer for liquidity providing (LP'ing) on concentrated liquidity market makers ([CLMMs](https://coinmarketcap.com/community/articles/65608f0cc54ab771279066a5/)). It is the core implementation of our [paper](https://arxiv.org/abs/2411.10399) **_Game Theoretic Liquidity Provisioning in Concentrated Liquidity Market Makers_** written by **_Weizhao Tang, Rachid El-Azouzi, Cheng Han Lee, Ethan Chan, and Giulia Fanti_**. If you would like to use this codebase or cite our work, please read details in [references](#references). 
 
 The workflow consists of the following steps:
 1. Prepare csv tables with the same scheme as in [example-liquidity](example-liquidity).<br>
